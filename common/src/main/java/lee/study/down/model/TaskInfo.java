@@ -33,16 +33,6 @@ public class TaskInfo implements Serializable {
     return getFilePath() + File.separator + getFileName();
   }
 
-  public String buildChunksPath() {
-    return getFilePath() + File.separator + "." + getFileName() + "_cks";
-  }
-
-  public String buildChunkFilePath(int index) {
-    int size = chunkInfoList == null ? 0 : (chunkInfoList.size() + "").length();
-    return buildChunksPath() + File.separator + "ck_" + String.format("%0" + size + "d", index)
-        + ".tmp";
-  }
-
   public String buildTaskRecordFilePath() {
     return getFilePath() + File.separator + "." + getFileName() + ".inf";
   }
@@ -80,11 +70,12 @@ public class TaskInfo implements Serializable {
   }
 
   public void reset() {
-    startTime = lastTime = pauseTime = 0;
+    startTime = lastTime = pauseTime = downSize = 0;
     chunkInfoList.forEach((chunkInfo) -> {
       chunkInfo.setStartTime(0);
       chunkInfo.setLastTime(0);
       chunkInfo.setPauseTime(0);
+      chunkInfo.setDownSize(0);
       chunkInfo.setErrorCount(0);
     });
   }

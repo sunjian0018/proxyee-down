@@ -16,9 +16,11 @@ import lee.study.down.boot.AbstractHttpDownBootstrap;
 import lee.study.down.constant.HttpDownStatus;
 import lee.study.down.dispatch.HttpDownCallback;
 import lee.study.down.model.ChunkInfo;
+import lee.study.down.model.HttpRequestInfo;
 import lee.study.down.model.TaskInfo;
 import lee.study.down.util.HttpDownUtil;
 import lee.study.proxyee.proxy.ProxyHandleFactory;
+import lee.study.proxyee.util.ProtoUtil.RequestProto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,13 +48,15 @@ public class HttpDownInitializer extends ChannelInitializer {
       ch.pipeline().addLast(ProxyHandleFactory.build(bootstrap.getHttpDownInfo().getProxyConfig()));
     }
     if (isSsl) {
-      ch.pipeline().addLast(bootstrap.getClientSslContext().newHandler(ch.alloc()));
+      RequestProto requestProto = ((HttpRequestInfo) bootstrap.getHttpDownInfo().getRequest()).requestProto();
+      ch.pipeline().addLast(bootstrap.getClientSslContext().newHandler(ch.alloc(), requestProto.getHost(), requestProto.getPort()));
     }
     ch.pipeline()
-        .addLast("httpCodec", new HttpClientCodec());
+        .addLast("httpCodec",
+            new HttpClientCodec(4096, 8192, AbstractHttpDownBootstrap.BUFFER_SIZE));
     ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
 
-      private Closeable[] fileChannels;
+      private Closeable closeable;
       private TaskInfo taskInfo = bootstrap.getHttpDownInfo().getTaskInfo();
       private HttpDownCallback callback = bootstrap.getCallback();
 
@@ -65,25 +69,27 @@ public class HttpDownInitializer extends ChannelInitializer {
             }
             HttpContent httpContent = (HttpContent) msg;
             ByteBuf byteBuf = httpContent.content();
-            int readableBytes = byteBuf.readableBytes();
             synchronized (chunkInfo) {
               Channel nowChannel = bootstrap.getChannel(chunkInfo);
               if (chunkInfo.getStatus() == HttpDownStatus.RUNNING
-                  && nowChannel == ctx.channel()
-                  && bootstrap.doFileWriter(chunkInfo, byteBuf.nioBuffer())) {
-                //文件已下载大小
-                chunkInfo.setDownSize(chunkInfo.getDownSize() + readableBytes);
-                taskInfo.setDownSize(taskInfo.getDownSize() + readableBytes);
-                if (callback != null) {
-                  callback.onProgress(bootstrap.getHttpDownInfo(), chunkInfo);
+                  && nowChannel == ctx.channel()) {
+                int readableBytes = bootstrap.doFileWriter(chunkInfo, byteBuf.nioBuffer());
+                if (readableBytes > 0) {
+                  //最后一次下载时间
+                  chunkInfo.setLastDownTime(System.currentTimeMillis());
+                  //文件已下载大小
+                  chunkInfo.setDownSize(chunkInfo.getDownSize() + readableBytes);
+                  taskInfo.setDownSize(taskInfo.getDownSize() + readableBytes);
+                  if (callback != null) {
+                    callback.onProgress(bootstrap.getHttpDownInfo(), chunkInfo);
+                  }
                 }
               } else {
                 safeClose(ctx.channel());
                 return;
               }
             }
-            if (chunkInfo.getDownSize() == chunkInfo.getTotalSize()
-                || (!taskInfo.isSupportRange() && msg instanceof LastHttpContent)) {
+            if (isDone(chunkInfo.getDownSize(), httpContent)) {
               LOGGER.debug("分段下载完成：channelId[" + ctx.channel().id() + "]\t" + chunkInfo);
               bootstrap.close(chunkInfo);
               //分段下载完成回调
@@ -100,31 +106,37 @@ public class HttpDownInitializer extends ChannelInitializer {
                     taskInfo.setTotalSize(taskInfo.getDownSize());
                     taskInfo.getChunkInfoList().get(0).setTotalSize(taskInfo.getDownSize());
                   }
-                  if (taskInfo.getChunkInfoList().size() > 1) {
-                    bootstrap.merge();
-                  }
                   //文件下载完成回调
                   taskInfo.setStatus(HttpDownStatus.DONE);
                   LOGGER.debug("下载完成：channelId[" + ctx.channel().id() + "]\t" + chunkInfo);
+                  bootstrap.close();
                   if (callback != null) {
                     callback.onDone(bootstrap.getHttpDownInfo());
                   }
                 }
               }
-            } else if (realContentSize
-                == chunkInfo.getDownSize() + chunkInfo.getOriStartPosition() - chunkInfo
-                .getNowStartPosition() || (realContentSize - 1)
-                == chunkInfo.getDownSize() + chunkInfo.getOriStartPosition() - chunkInfo
-                .getNowStartPosition()) {  //百度响应做了手脚，会少一个字节
+            } else if (isContinue(chunkInfo.getDownSize())) {  //百度响应做了手脚，会少一个字节
               //真实响应字节小于要下载的字节，在下载完成后要继续下载
               LOGGER.debug("继续下载：channelId[" + ctx.channel().id() + "]\t" + chunkInfo);
               bootstrap.retryChunkDown(chunkInfo, HttpDownStatus.CONNECTING_CONTINUE);
+            } else if (chunkInfo.getDownSize() > chunkInfo.getTotalSize()) {
+              LOGGER.debug("分段下载异常：channelId[" + ctx.channel().id() + "]\t" + chunkInfo);
+              chunkInfo.setDownSize(0);
+              chunkInfo.setStartTime(System.currentTimeMillis());
+              chunkInfo.setNowStartPosition(chunkInfo.getOriStartPosition());
+              bootstrap.retryChunkDown(chunkInfo);
             }
           } else {
             HttpResponse httpResponse = (HttpResponse) msg;
-            if ((httpResponse.status().code() + "").indexOf("20") != 0) {
-              chunkInfo.setErrorCount(chunkInfo.getErrorCount() + 1);
-              throw new RuntimeException("http down response error:" + httpResponse);
+            Integer responseCode = httpResponse.status().code();
+            if (responseCode.toString().indexOf("20") != 0) {
+              //应对百度近期同一时段多个连接返回400的问题
+              LOGGER.warn(
+                  "响应状态码异常：" + responseCode + "\t" + chunkInfo);
+              if (responseCode == 401 || responseCode == 403 || responseCode == 404) {
+                chunkInfo.setStatus(HttpDownStatus.ERROR_WAIT_CONNECT);
+              }
+              return;
             }
             realContentSize = HttpDownUtil.getDownContentSize(httpResponse.headers());
             synchronized (chunkInfo) {
@@ -137,7 +149,7 @@ public class HttpDownInitializer extends ChannelInitializer {
                         + "]" + chunkInfo);
                 chunkInfo
                     .setDownSize(chunkInfo.getNowStartPosition() - chunkInfo.getOriStartPosition());
-                fileChannels = bootstrap.initFileWriter(chunkInfo);
+                closeable = bootstrap.initFileWriter(chunkInfo);
                 chunkInfo.setStatus(HttpDownStatus.RUNNING);
                 if (callback != null) {
                   callback.onChunkConnected(bootstrap.getHttpDownInfo(), chunkInfo);
@@ -176,12 +188,23 @@ public class HttpDownInitializer extends ChannelInitializer {
 
       private void safeClose(Channel channel) {
         try {
-          HttpDownUtil.safeClose(channel, fileChannels);
+          HttpDownUtil.safeClose(channel, closeable);
         } catch (IOException e) {
           LOGGER.error("safeClose fail:", e);
         }
       }
 
+      private boolean isDone(long downSize, HttpContent content) {
+        return downSize == chunkInfo.getTotalSize()
+            || (!taskInfo.isSupportRange() && content instanceof LastHttpContent);
+      }
+
+      private boolean isContinue(long downSize) {
+        long downChunkSize =
+            downSize + chunkInfo.getOriStartPosition() - chunkInfo.getNowStartPosition();
+        return realContentSize == downChunkSize
+            || (realContentSize - 1) == downChunkSize;
+      }
     });
   }
 

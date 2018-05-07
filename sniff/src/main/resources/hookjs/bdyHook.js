@@ -1,4 +1,4 @@
-//1.1
+//1.9
 var initHookInterval = setInterval(function () {
   if (!window.$) {
     return;
@@ -18,7 +18,7 @@ var initHookInterval = setInterval(function () {
           " ")[0];
       $('.module-header-wrapper dl:first').find('dd:first').append(
           '<span class="' + pd_parent_span_class + ' find-light">'
-          + '<a href="https://github.com/monkeyWie/proxyee-down" target="_blank" title="百度云下载插件加载成功">proxyee-down</a>'
+          + '<a href="javascript:alert(\'请在网盘中选择文件再点击下载按钮(此按钮非下载按钮，仅用于提示)\')">proxyee-down</a>'
           + '<span class="' + pd_child_span_class + '"></span>'
           + '<i class="find-light-icon"></i>'
           + '</span>');
@@ -65,6 +65,11 @@ var initHookInterval = setInterval(function () {
       'list-tools': 'QDDOQB'
     };
     var wordMap = location.protocol == 'http:' ? wordMapHttp : wordMapHttps;
+
+    function getDefaultStyle(obj, attribute) {
+      return obj.currentStyle ? obj.currentStyle[attribute]
+          : document.defaultView.getComputedStyle(obj, false)[attribute];
+    }
 
     $(function () {
       switch (detectPage()) {
@@ -324,7 +329,8 @@ var initHookInterval = setInterval(function () {
           });
         } else {
           $('span.' + wordMap['checkbox']).parent().each(function () {
-            if ($(this).attr('class').split(' ').length > 3) {
+            if (getDefaultStyle($(this).find(">span>span").get(0), 'display')
+                != 'none') {
               var fileName = $(this).find('div.file-name div.text>a').text();
               $.each(fileList, function (i, file) {
                 if (file.server_filename == fileName) {
@@ -353,6 +359,10 @@ var initHookInterval = setInterval(function () {
           }
         } else if (selectFileList.length > 1) {
           downloadType = 'batch';
+        }
+        if (selectFileList.length >= 1000) {
+          alert("由于百度云的限制，批量下载选中的文件数量不能超过1000，请分批下载");
+          return;
         }
         if (!checkFileName(selectFileList)) {
           alert("文件夹名称不能包含+号，请修改名称后再下载");
@@ -853,13 +863,13 @@ var initHookInterval = setInterval(function () {
           vcodeDialog.open();
         } else if (result.errno === 0) {
           vcodeDialog.close();
-          var link;
+          var downloadLink;
           if (selectFileList.length == 1 && selectFileList[0].isdir === 0) {
-            link = result.list[0].dlink;
+            downloadLink = result.list[0].dlink;
           } else {
-            link = result.dlink;
+            downloadLink = result.dlink;
           }
-          window.open(link)
+          window.open(downloadLink)
         } else {
           alert('发生错误！');
           return;
@@ -891,8 +901,13 @@ var initHookInterval = setInterval(function () {
             }
           });
         } else {
-          var fileInfo = yunData.FILEINFO[0];
-          if (fileInfo.isdir == 0) {
+          var fileInfo = yunData.FILEINFO[0] || {
+            server_filename: yunData.FILENAME,
+            path: yunData.PATH,
+            fs_id: yunData.FS_ID,
+            isdir: 0
+          };
+          if (yunData.FILEINFO.length <= 1 && fileInfo.isdir == 0) {
             selectFileList.push({
               filename: fileInfo.server_filename,
               path: fileInfo.path,
@@ -918,7 +933,11 @@ var initHookInterval = setInterval(function () {
           }
         }
         if (selectFileList.length === 0) {
-          alert('没有选中文件，请重试');
+          alert('获取选中文件失败，请刷新重试');
+          return;
+        }
+        if (selectFileList.length >= 1000) {
+          alert("由于百度云的限制，批量下载选中的文件数量不能超过1000，请分批下载");
           return;
         }
         if (!checkFileName(selectFileList)) {
@@ -926,29 +945,24 @@ var initHookInterval = setInterval(function () {
           return;
         }
         buttonTarget = 'link';
-        var downloadLink = getDownloadLink();
+        var downloadInfo = getDownloadLink();
 
-        if (downloadLink.errno == -20) {
+        if (downloadInfo.errno == -20) {
           vcode = getVCode();
           if (!vcode || vcode.errno !== 0) {
             alert('获取验证码失败！');
             return;
           }
           vcodeDialog.open(vcode);
-        } else if (downloadLink.errno == 112) {
+        } else if (downloadInfo.errno == 112) {
           alert('页面过期，请刷新重试');
           return;
-        } else if (downloadLink.errno === 0) {
-          var link;
+        } else if (downloadInfo.errno === 0) {
+          var downloadLink;
           if (selectFileList.length == 1 && selectFileList[0].isdir === 0) {
-            link = downloadLink.list[0].dlink;
+            downloadLink = downloadInfo.list[0].dlink;
           } else {
-            link = downloadLink.dlink;
-          }
-          if (selectFileList.length == 1) {
-            $('#dialog-downloadlink').attr('href', link).text(link);
-          } else {
-            $('#dialog-downloadlink').attr('href', link).text(link);
+            downloadLink = downloadInfo.dlink;
           }
           var filename = '';
           $.each(selectFileList, function (index, element) {
@@ -962,7 +976,7 @@ var initHookInterval = setInterval(function () {
               }
             }
           });
-          window.open(link)
+          window.open(downloadLink)
         } else {
           alert('获取下载链接失败！');
           return;

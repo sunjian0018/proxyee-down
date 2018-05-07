@@ -11,6 +11,7 @@ import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
+import java.util.Arrays;
 import lee.study.down.model.HttpRequestInfo;
 import lee.study.proxyee.intercept.HttpProxyIntercept;
 import lee.study.proxyee.intercept.HttpProxyInterceptPipeline;
@@ -69,10 +70,7 @@ public class HttpDownSniffIntercept extends HttpProxyIntercept {
           && ((disposition != null
           && disposition.contains(HttpHeaderValues.ATTACHMENT)
           && disposition.contains(HttpHeaderValues.FILENAME))
-          || (isChrome(pipeline.getHttpRequest().headers().get(HttpHeaderNames.USER_AGENT))
-          && pipeline.getHttpRequest().uri().matches("^.*\\.[^./]{1,5}(\\?[^?]*)?$")
-          && contentType != null
-          && !contentType.matches("^.*text/.*$")))) {
+          || isDownContentType(contentType))) {
         downFlag = true;
       }
 
@@ -106,11 +104,57 @@ public class HttpDownSniffIntercept extends HttpProxyIntercept {
     }
   }
 
-  private boolean isChrome(String ua) {
-    if (ua != null && ua.indexOf("Chrome") != -1) {
-      return true;
-    } else {
-      return false;
+  //https://chromium.googlesource.com/chromium/src/+/master/net/base/mime_util.cc
+  private static final String[] CONTENT_TYPES = {
+      "application/javascript",
+      "application/x-javascript",
+      "application/wasm",
+      "application/x-chrome-extension",
+      "application/xhtml+xml",
+      "application/font-woff",
+      "application/json",
+      "application/x-shockwave-flash",
+      "audio/mpeg",
+      "audio/flac",
+      "audio/mp3",
+      "audio/ogg",
+      "audio/wav",
+      "audio/webm",
+      "audio/x-m4a",
+      "image/gif",
+      "image/jpeg",
+      "image/png",
+      "image/apng",
+      "image/webp",
+      "image/x-icon",
+      "image/bmp",
+      "image/jpeg",
+      "image/svg+xml",
+      "image/tiff",
+      "image/vnd.microsoft.icon",
+      "image/x-png",
+      "image/x-xbitmap",
+      "video/webm",
+      "video/ogg",
+      "video/mp4",
+      "video/mpeg",
+      "text/css",
+      "text/html",
+      "text/xml",
+      "text/calendar",
+      "text/html",
+      "text/plain",
+      "text/x-sh",
+      "text/xml",
+      "multipart/related",
+      "message/rfc822",
+  };
+
+  private boolean isDownContentType(String contentType) {
+    if (contentType != null) {
+      String contentTypeFinal = contentType.split(";")[0].trim().toLowerCase();
+      return Arrays.stream(CONTENT_TYPES).noneMatch(type -> contentTypeFinal.equals(type));
     }
+    return true;
   }
 }

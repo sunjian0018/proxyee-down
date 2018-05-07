@@ -2,6 +2,7 @@ package lee.study.down.io;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
@@ -12,13 +13,15 @@ import java.util.List;
 
 public class LargeMappedByteBuffer implements Closeable {
 
+  private FileChannel fileChannel;
   private List<MappedByteBuffer> bufferList;
   private long rawPosition;
   private long position;
   private long size;
 
-  public LargeMappedByteBuffer(FileChannel fileChannel, MapMode mapMode, long position, long size)
+  public LargeMappedByteBuffer(String path, long position, long size)
       throws IOException {
+    fileChannel = new RandomAccessFile(path, "rw").getChannel();
     this.rawPosition = position;
     this.position = position;
     this.size = size;
@@ -27,7 +30,7 @@ public class LargeMappedByteBuffer implements Closeable {
     long calcPos = position;
     for (int i = 0; i < count; i++) {
       long calcSize = i + 1 == count ? size % Integer.MAX_VALUE : Integer.MAX_VALUE;
-      bufferList.add(fileChannel.map(mapMode, calcPos, calcSize));
+      bufferList.add(fileChannel.map(MapMode.READ_WRITE, calcPos, calcSize));
       calcPos += calcSize;
     }
   }
@@ -66,6 +69,7 @@ public class LargeMappedByteBuffer implements Closeable {
       for (MappedByteBuffer mappedBuffer : bufferList) {
         m.invoke(clazz, mappedBuffer);
       }
+      fileChannel.close();
     } catch (Exception e) {
       throw new IOException("LargeMappedByteBuffer close", e);
     }

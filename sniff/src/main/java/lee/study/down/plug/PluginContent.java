@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import lee.study.down.model.PluginBean;
+import lee.study.down.util.FileUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,27 +31,30 @@ public class PluginContent {
         JarURLConnection jarURLConnection = (JarURLConnection) connection;
         JarFile jarFile = jarURLConnection.getJarFile();
         Enumeration<JarEntry> entries = jarFile.entries();
-        while(entries.hasMoreElements()){
+        while (entries.hasMoreElements()) {
           JarEntry entry = entries.nextElement();
           if (entry.getName().matches("^.*hookjs/[^/]+$")) {
-            String key = entry.getName().substring(entry.getName().indexOf("hookjs/")+7);
-            update(key, PluginUtil.getPluginBean(jarFile.getInputStream(entry)));
+            String key = entry.getName().substring(entry.getName().indexOf("hookjs/") + 7);
+            set(key, PluginUtil.checkAndUpdateLocalPlugin(key, jarFile.getInputStream(entry)));
           }
         }
         jarFile.close();
       } else {
         File file = new File(url.getPath());
         for (File hook : file.listFiles()) {
-          update(hook.getName(), PluginUtil.getPluginBean(new FileInputStream(hook)));
+          set(hook.getName(),
+              PluginUtil.checkAndUpdateLocalPlugin(hook.getName(), new FileInputStream(hook)));
         }
       }
     } catch (Exception e) {
-      LOGGER.error("plugin content init error",e);
+      LOGGER.error("plugin content init error", e);
     }
   }
 
-  public static void update(String key, PluginBean value) {
-    content.put(key, value);
+  public static void set(String key, PluginBean value) {
+    if (value != null) {
+      content.put(key, value);
+    }
   }
 
   public static PluginBean get(String key) {

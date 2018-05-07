@@ -1,9 +1,12 @@
 package lee.study.down.boot;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.AdaptiveRecvByteBufAllocator;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.DefaultLastHttpContent;
@@ -16,8 +19,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import lee.study.down.constant.HttpDownStatus;
@@ -40,10 +41,15 @@ import org.slf4j.LoggerFactory;
 @AllArgsConstructor
 public abstract class AbstractHttpDownBootstrap {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(AbstractHttpDownBootstrap.class);
+  protected static final Logger LOGGER = LoggerFactory.getLogger(AbstractHttpDownBootstrap.class);
+
+  //tcp bufferSize最大为128K
+  public static final int BUFFER_SIZE = 1024 * 128;
+  private static final RecvByteBufAllocator RECV_BYTE_BUF_ALLOCATOR = new AdaptiveRecvByteBufAllocator(
+      64, BUFFER_SIZE, BUFFER_SIZE);
 
   protected static final String ATTR_CHANNEL = "channel";
-  protected static final String ATTR_FILE_CHANNELS = "fileChannels";
+  protected static final String ATTR_FILE_CLOSEABLE = "fileCloseable";
 
   private HttpDownInfo httpDownInfo;
   private int retryCount;
@@ -70,7 +76,12 @@ public abstract class AbstractHttpDownBootstrap {
     if (new File(taskInfo.buildTaskFilePath()).exists()) {
       throw new BootstrapException("文件名已存在，请修改文件名");
     }
-    initBoot();
+    //创建文件
+    try (
+        RandomAccessFile randomAccessFile = new RandomAccessFile(taskInfo.buildTaskFilePath(), "rw")
+    ) {
+      randomAccessFile.setLength(taskInfo.getTotalSize());
+    }
     //文件下载开始回调
     taskInfo.reset();
     taskInfo.setStatus(HttpDownStatus.RUNNING);
@@ -86,12 +97,14 @@ public abstract class AbstractHttpDownBootstrap {
     }
   }
 
-  public void startChunkDown(ChunkInfo chunkInfo, int updateStatus) throws Exception {
+  protected void startChunkDown(ChunkInfo chunkInfo, int updateStatus) throws Exception {
     HttpRequestInfo requestInfo = (HttpRequestInfo) httpDownInfo.getRequest();
     RequestProto requestProto = requestInfo.requestProto();
     LOGGER.debug("开始下载：" + chunkInfo);
     Bootstrap bootstrap = new Bootstrap()
         .channel(NioSocketChannel.class)
+        .option(ChannelOption.RCVBUF_ALLOCATOR, RECV_BYTE_BUF_ALLOCATOR)
+        .option(ChannelOption.SO_RCVBUF, BUFFER_SIZE)
         .group(clientLoopGroup)
         .handler(new HttpDownInitializer(requestProto.getSsl(), this, chunkInfo));
     if (httpDownInfo.getProxyConfig() != null) {
@@ -103,6 +116,8 @@ public abstract class AbstractHttpDownBootstrap {
     }
     ChannelFuture cf = bootstrap.connect(requestProto.getHost(), requestProto.getPort());
     chunkInfo.setStatus(updateStatus);
+    //重置最后下载时间
+    chunkInfo.setLastDownTime(System.currentTimeMillis());
     cf.addListener((ChannelFutureListener) future -> {
       if (future.isSuccess()) {
         synchronized (chunkInfo) {
@@ -181,15 +196,19 @@ public abstract class AbstractHttpDownBootstrap {
   public void pauseDown() throws Exception {
     TaskInfo taskInfo = httpDownInfo.getTaskInfo();
     synchronized (taskInfo) {
+      if (taskInfo.getStatus() == HttpDownStatus.PAUSE
+          || taskInfo.getStatus() == HttpDownStatus.DONE) {
+        return;
+      }
       taskInfo.setStatus(HttpDownStatus.PAUSE);
       for (ChunkInfo chunkInfo : taskInfo.getChunkInfoList()) {
         synchronized (chunkInfo) {
-          close(chunkInfo);
           if (chunkInfo.getStatus() != HttpDownStatus.DONE) {
             chunkInfo.setStatus(HttpDownStatus.PAUSE);
           }
         }
       }
+      close();
     }
     if (callback != null) {
       callback.onPause(httpDownInfo);
@@ -203,7 +222,14 @@ public abstract class AbstractHttpDownBootstrap {
       throws Exception {
     TaskInfo taskInfo = httpDownInfo.getTaskInfo();
     synchronized (taskInfo) {
-      if (continueDownHandle()) {
+      if (taskInfo.getStatus() == HttpDownStatus.RUNNING
+          || taskInfo.getStatus() == HttpDownStatus.DONE) {
+        return;
+      }
+      if (!FileUtil.exists(taskInfo.buildTaskFilePath())) {
+        close();
+        startDown();
+      } else {
         taskInfo.setStatus(HttpDownStatus.RUNNING);
         taskInfo.getChunkInfoList().forEach((chunk) -> chunk.setErrorCount(0));
         long curTime = System.currentTimeMillis();
@@ -227,44 +253,59 @@ public abstract class AbstractHttpDownBootstrap {
     }
   }
 
-  public abstract boolean continueDownHandle() throws Exception;
-
-  public abstract void merge() throws Exception;
-
   public void close(ChunkInfo chunkInfo) {
+    close(chunkInfo, -1);
+  }
+
+  public void close(ChunkInfo chunkInfo, int status) {
     try {
+      if (status != -1) {
+        chunkInfo.setStatus(status);
+      }
+      if (!attr.containsKey(chunkInfo.getIndex())) {
+        return;
+      }
       Channel channel = getChannel(chunkInfo);
-      Closeable[] fileChannels = getFileWriter(chunkInfo);
       LOGGER.debug(
           "下载连接关闭：channelId[" + (channel != null ? channel.id() : "null") + "]\t" + chunkInfo);
+      HttpDownUtil.safeClose(channel);
+      Closeable closeable = (Closeable) getAttr(chunkInfo, ATTR_FILE_CLOSEABLE);
+      if (closeable != null) {
+        closeable.close();
+      }
       attr.remove(chunkInfo.getIndex());
-      HttpDownUtil.safeClose(channel, fileChannels);
     } catch (Exception e) {
       LOGGER.error("closeChunk error", e);
     }
   }
 
-  public void close() {
+  public void close(int status) {
     TaskInfo taskInfo = httpDownInfo.getTaskInfo();
     synchronized (taskInfo) {
+      if (status != -1) {
+        taskInfo.setStatus(status);
+      }
       for (ChunkInfo chunkInfo : httpDownInfo.getTaskInfo().getChunkInfoList()) {
         synchronized (chunkInfo) {
-          close(chunkInfo);
+          close(chunkInfo, status);
         }
       }
     }
   }
 
+  public void close() {
+    close(-1);
+  }
+
   public void delete(boolean delFile) throws Exception {
-    close();
-    timeoutCheckTask.delBoot(httpDownInfo.getTaskInfo().getId());
     TaskInfo taskInfo = httpDownInfo.getTaskInfo();
     //删除任务进度记录文件
     synchronized (taskInfo) {
+      close(HttpDownStatus.WAIT);
+      timeoutCheckTask.delBoot(httpDownInfo.getTaskInfo().getId());
       FileUtil.deleteIfExists(taskInfo.buildTaskRecordFilePath());
       FileUtil.deleteIfExists(taskInfo.buildTaskRecordBakFilePath());
       if (delFile) {
-        FileUtil.deleteIfExists(taskInfo.buildChunksPath());
         FileUtil.deleteIfExists(taskInfo.buildTaskFilePath());
       }
       if (callback != null) {
@@ -291,7 +332,7 @@ public abstract class AbstractHttpDownBootstrap {
     }
   }
 
-  public void setChannel(ChunkInfo chunkInfo, Channel channel) {
+  protected void setChannel(ChunkInfo chunkInfo, Channel channel) {
     setAttr(chunkInfo, ATTR_CHANNEL, channel);
   }
 
@@ -299,13 +340,10 @@ public abstract class AbstractHttpDownBootstrap {
     return (Channel) getAttr(chunkInfo, ATTR_CHANNEL);
   }
 
-  public abstract void initBoot() throws Exception;
+  public abstract int doFileWriter(ChunkInfo chunkInfo, ByteBuffer buffer)
+      throws IOException;
 
-  public abstract Closeable[] initFileWriter(ChunkInfo chunkInfo) throws Exception;
-
-  public abstract boolean doFileWriter(ChunkInfo chunkInfo, ByteBuffer buffer) throws IOException;
-
-  public Closeable[] getFileWriter(ChunkInfo chunkInfo) {
-    return (Closeable[]) getAttr(chunkInfo, ATTR_FILE_CHANNELS);
+  public Closeable initFileWriter(ChunkInfo chunkInfo) throws Exception {
+    return null;
   }
 }

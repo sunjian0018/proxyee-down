@@ -1,8 +1,21 @@
 <template>
   <div>
-    <el-tooltip v-if="!initFlag" content="创建任务" placement="right">
-      <el-button class="el-icon-plus" @click="setNewTaskStatus(1)"></el-button>
-    </el-tooltip>
+    <el-row v-if="!initFlag">
+      <el-col>
+        <el-tooltip content="创建任务">
+          <el-button class="el-icon-plus tool-button" @click="setNewTaskStatus(1)"></el-button>
+        </el-tooltip>
+        <el-tooltip content="继续任务">
+          <el-button class="el-icon-task-start tool-button" @click="continueAllHandle"></el-button>
+        </el-tooltip>
+        <el-tooltip content="暂停任务">
+          <el-button class="el-icon-task-pause tool-button" @click="pauseAllHandle"></el-button>
+        </el-tooltip>
+        <el-tooltip content="删除任务">
+          <el-button class="el-icon-task-delete tool-button" @click="deleteAllHandle"></el-button>
+        </el-tooltip>
+      </el-col>
+    </el-row>
     <el-dialog
       :title="newTaskTitle"
       :visible="newTaskStatus>0"
@@ -21,87 +34,144 @@
     </el-dialog>
     <div v-if="initFlag"
          v-loading="initFlag"
-         style="height: 500px"
-         element-loading-background="rgba(0, 0, 0, 0)">
+         style="height: 500px">
     </div>
     <div v-else-if="tasks.length>0">
-      <el-row type="flex" justify="center">
-        <el-col :span="20">
-          <el-row v-for="row in Math.ceil(tasks.length/cellSize)" :key="row">
-            <el-col :span="8" v-for="task in rowTasks(row)" class="task-list-container"
-                    :key="task.id">
+      <el-row class="task-list-row task-list-row-title"
+              :gutter="20">
+        <el-col :span="1">
+          <el-checkbox @change="checkAllHandle" v-model="checkAll" :indeterminate="checkSome">
+            &nbsp;
+          </el-checkbox>
+        </el-col>
+        <el-col :span="6">
+          <b>名称</b>
+        </el-col>
+        <el-col :span="3">
+          <b>大小</b>
+        </el-col>
+        <el-col :span="5">
+          <b>进度</b>
+        </el-col>
+        <el-col :span="3">
+          <b>速度</b>
+        </el-col>
+        <el-col :span="3">
+          <b>状态</b>
+        </el-col>
+        <el-col :span="3">
+          <b>操作</b>
+        </el-col>
+      </el-row>
+      <el-row v-for="(task,index) in tasks"
+              :gutter="20"
+              class="task-list-row"
+              :key="task.id">
+        <el-col :span="1">
+          <el-checkbox v-model="checkTasks" :label="task.id" @change="checkHandle">&nbsp;
+          </el-checkbox>
+        </el-col>
+        <el-col :span="6">
+          <el-tooltip :content="task.fileName">
+            <p>{{task.fileName}}</p>
+          </el-tooltip>
+        </el-col>
+        <el-col :span="3">
+          <p>{{sizeFmt(task.totalSize, '未知大小')}}</p>
+        </el-col>
+        <el-col :span="5"
+                class="task-list-container">
+          <el-popover
+            placement="right-end"
+            title="下载详情"
+            width="400"
+            trigger="click">
+            <div class="file-detail">
               <el-popover
-                placement="right-end"
-                title="下载详情"
-                width="400"
+                popper-class="file-detail-popper"
+                :content="task.url"
                 trigger="click">
-                <div class="file-detail">
-                  <p>
-                    <b style="display:block;height: 40px;overflow-y: auto">{{task.url}}</b>
-                  </p>
-                  <p>
-                    <span>名称：</span>
-                    <b>{{task.fileName}}</b>
-                  </p>
-                  <p>
-                    <span>路径：</span>
-                    <b>{{task.filePath}}</b>
-                  </p>
-                  <p>
-                    <span>大小：</span>
-                    <b>{{sizeFmt(task.totalSize, '未知大小')}}</b>
-                  </p>
-                  <p>
-                    <span>分段：</span>
-                    <b>{{task.connections}}</b>
-                  </p>
-                  <p>
-                    <span>速度：</span>
-                    <b>{{sizeFmt(speedTask(task), '0B')}}/s</b>
-                  </p>
-                  <p>
-                    <span>状态：</span>
-                    <b>{{leftTime(task)}}</b>
-                    <el-tooltip v-show="task.status==6" class="item"
-                                placement="right">
-                      <div slot="content">下载链接失效，可尝试<a
-                        href="https://github.com/monkeyWie/proxyee-down/blob/master/.guide/common/refresh/read.md"
-                        target="_blank" style="color: #3a8ee6">刷新下载链接</a>
-                      </div>
-                      <i class="el-icon-question"></i>
-                    </el-tooltip>
-                  </p>
-                </div>
-                <ul :class="{'task-list':true,'task-list-scroll':task.chunkInfoList.length>=16}">
-                  <li v-for="chunk in task.chunkInfoList" :key="chunk.index">
-                    <task-progress :text-inside="true" :stroke-width="18"
-                                   :percentage="task.totalProgress||progress(chunk)"
-                                   :status="status(chunk)"></task-progress>
-                    <span>{{sizeFmt(speedChunk(chunk), '0B')}}/s</span>
-                  </li>
-                </ul>
-                <task-progress type="circle"
-                               :percentage="task.totalProgress||progress(task)"
-                               :status="status(task)"
-                               :width="200"
-                               slot="reference"></task-progress>
+                <p style="white-space: nowrap;text-overflow: ellipsis;overflow: hidden;"
+                   slot="reference">
+                  {{task.url}}
+                </p>
               </el-popover>
-              <div class="task-progress-icon">
-                <div v-if="task.status!=8">
-                  <i v-if="task.status!=7"
-                     :class="iconClass(task)"
-                     @click="controlTask(task)"></i>
-                  <i class="el-icon-task-delete" @click="deleteTask(task)"></i>
-                  <i v-if="task.status==7" class="el-icon-task-folder"
-                     @click="openTaskDir(task)"></i>
-                </div>
-                <div v-else>
-                  <i class="el-icon-loading"></i>
-                </div>
-              </div>
-              <p>{{task.fileName}}</p>
-            </el-col>
-          </el-row>
+              <p>
+                <span>名称：</span>
+                <b>{{task.fileName}}</b>
+              </p>
+              <p>
+                <span>路径：</span>
+                <b>{{task.filePath}}</b>
+              </p>
+              <p>
+                <span>大小：</span>
+                <b>{{sizeFmt(task.totalSize, '未知大小')}}</b>
+              </p>
+              <p>
+                <span>分段：</span>
+                <b>{{task.connections}}</b>
+              </p>
+              <p>
+                <span>速度：</span>
+                <b>{{sizeFmt(speedTask(task), '0B')}}/s</b>
+              </p>
+              <p>
+                <span>状态：</span>
+                <b>{{leftTime(task)}}</b>
+              </p>
+            </div>
+            <ul
+              :class="{'task-detail-list':true,'task-detail-list-scroll':task.chunkInfoList.length>=16}">
+              <li v-for="chunk in task.chunkInfoList" :key="chunk.index">
+                <task-progress :text-inside="true" :stroke-width="18"
+                               :percentage="progress(chunk)"
+                               :status="status(chunk)"></task-progress>
+                <span>{{sizeFmt(speedChunk(chunk), '0B')}}/s</span>
+              </li>
+            </ul>
+            <task-progress :text-inside="true"
+                           :stroke-width="30"
+                           :percentage="progress(task)"
+                           :status="status(task)"
+                           slot="reference"></task-progress>
+          </el-popover>
+        </el-col>
+        <el-col :span="3">
+          <p>{{sizeFmt(speedTask(task), '0B')}}/s</p>
+        </el-col>
+        <el-col :span="3">
+          <el-tag :type="statusType(task)">{{leftTime(task)}}</el-tag>
+          <el-tooltip v-show="task.status==6" class="item"
+                      placement="right">
+            <div slot="content">下载链接失效，可尝试
+              <native-a
+                href="https://github.com/monkeyWie/proxyee-down/blob/master/.guide/common/refresh/read.md"
+                target="_blank" style="color: #3a8ee6">刷新下载链接
+              </native-a>
+            </div>
+            <i class="el-icon-question"></i>
+          </el-tooltip>
+          <el-tooltip v-show="task.status==4&&progress(task)>0&&speedTask(task)==0" class="item"
+                      placement="right">
+            <div slot="content">若长时间下载速度为0，可尝试
+              <native-a
+                href="https://github.com/monkeyWie/proxyee-down/blob/master/.guide/common/refresh/read.md"
+                target="_blank" style="color: #3a8ee6">刷新下载链接
+              </native-a>
+            </div>
+            <i class="el-icon-question"></i>
+          </el-tooltip>
+        </el-col>
+        <el-col :span="3">
+          <div class="task-list-icon">
+            <i v-if="task.status==7" class="el-icon-task-folder"
+               @click="openTaskDir(task)"></i>
+            <i v-if="task.status!=7"
+               :class="iconClass(task)"
+               @click="controlTask(task)"></i>
+            <i class="el-icon-task-delete" @click="deleteTask(task)"></i>
+          </div>
         </el-col>
       </el-row>
     </div>
@@ -113,6 +183,7 @@
 
 <script>
   import Util from '../common/util'
+  import NativeA from './base/NativeA'
   import BuildTask from './BuildTask'
   import NewTask from './NewTask'
   import TaskProgress from './base/TaskProgress'
@@ -122,7 +193,16 @@
     components: {
       BuildTask,
       NewTask,
-      TaskProgress
+      TaskProgress,
+      NativeA
+    },
+    data() {
+      return {
+        checkTasks: [],
+        checkAll: false,
+        checkSome: false,
+        urlShow: {},
+      }
     },
     computed: {
       newTaskTitle() {
@@ -152,16 +232,17 @@
       }
     },
     methods: {
-      rowTasks(row) {
-        let ret = [];
-        let start = (row - 1) * this.cellSize;
-        for (let i = 0; i < this.cellSize; i++) {
-          if (start + i == this.tasks.length) {
-            break;
-          }
-          ret.push(this.tasks[start + i]);
+      checkAllHandle(isCheck) {
+        if (isCheck) {
+          this.checkTasks = this.tasks.map(task => task.id);
+          this.checkSome = false;
+        } else {
+          this.checkTasks = [];
         }
-        return ret;
+      },
+      checkHandle() {
+        this.checkAll = this.checkTasks.length == this.tasks.length;
+        this.checkSome = !this.checkAll && this.checkTasks.length > 0;
       },
       progress(task) {
         let fileDownSize = task.downSize;
@@ -213,20 +294,14 @@
         return 0;
       },
       leftTime(task) {
+        if (task.status == 5) {
+          return '暂停中';
+        }
         if (task.status == 6) {
           return '失败';
         }
         if (task.status == 7) {
           return '已完成';
-        }
-        if (task.status == 8) {
-          return '合并中';
-        }
-        if (task.status == 9) {
-          return '待合并';
-        }
-        if (task.status == 5) {
-          return '暂停中';
         }
         let speed = this.speedTask(task);
         if (speed) {
@@ -235,19 +310,32 @@
           return '未知';
         }
       },
+      statusType(task) {
+        if (task.status == 5) {
+          return 'info';
+        }
+        if (task.status == 6) {
+          return 'danger';
+        }
+        if (task.status == 7) {
+          return 'success';
+        }
+        if (!this.speedTask(task)) {
+          return 'warning';
+        }
+        return null;
+      },
       status(task) {
         switch (task.status) {
           case 7:
             return 'success';
-          case 8:
-            return 'merge';
-          case 2:
           case 6:
+          case 8:
             return 'exception';
           case 5:
-          case 9:
             return 'pause';
           case 1:
+          case 2:
             return 'ready';
           default:
             return null;
@@ -264,41 +352,30 @@
         }
       },
       controlTask(task) {
+        let load = this.$loading();
         if (task.status == 5 || task.status == 6 || task.status == 9) {
           this.$http.get('api/continueTask?id=' + task.id)
           .then(() => {
+            load.close();
           }).catch(() => {
           });
         } else {
           this.$http.get('api/pauseTask?id=' + task.id)
           .then(() => {
+            load.close();
           }).catch(() => {
           });
         }
       },
       deleteTask(task) {
-        const check = document.getElementById("task-delete");
-        if (check) {
-          document.getElementById("task-delete").checked = false;
-        }
-        this.$confirm(
-          '<label>' +
-          '<input id="task-delete" type="checkbox" style="height:18px;width:18px;vertical-align:middle;">'
-          +
-          '<span>删除任务和文件</span>' +
-          '</label>',
-          '提示', {
-            confirmButtonText: '确定',
-            cancelButtonText: '取消',
-            dangerouslyUseHTMLString: true
-          }).then(() => {
-          this.$http.get('api/deleteTask?id=' + task.id + "&delFile=" + document.getElementById(
-            "task-delete").checked)
+        this.deleteConfirm(checked => {
+          let load = this.$loading();
+          this.$http.get('api/deleteTask?id=' + task.id + "&delFile=" + checked)
           .then(() => {
             this.$store.commit("tasks/delTask", task.id);
+            load.close();
           }).catch(() => {
           });
-        }).catch(() => {
         });
       },
       openTaskDir(task) {
@@ -314,6 +391,66 @@
         if (result.data) {
           this.setNewTaskId(result.data);
           this.setNewTaskStatus(2);
+        }
+      },
+      deleteConfirm(call) {
+        const check = document.getElementById("task-delete");
+        if (check) {
+          document.getElementById("task-delete").checked = false;
+        }
+        this.$confirm(
+          '<label>' +
+          '<input id="task-delete" type="checkbox" style="height:18px;width:18px;vertical-align:middle;">'
+          +
+          '<span>删除任务和文件</span>' +
+          '</label>',
+          '提示', {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            dangerouslyUseHTMLString: true
+          }).then(() => {
+          call(document.getElementById("task-delete").checked);
+        }).catch(() => {
+        });
+      },
+      hasChecked() {
+        if (this.checkTasks.length == 0) {
+          this.$message({showClose: true, message: '请选择任务'});
+          return false;
+        }
+        return true;
+      },
+      continueAllHandle() {
+        if (this.hasChecked()) {
+          let load = this.$loading();
+          this.$http.post('api/continueAllTask', this.checkTasks)
+          .then(() => {
+            load.close();
+          }).catch(() => {
+          });
+        }
+      },
+      pauseAllHandle() {
+        if (this.hasChecked()) {
+          let load = this.$loading();
+          this.$http.post('api/pauseAllTask', this.checkTasks)
+          .then(() => {
+            load.close();
+          }).catch(() => {
+          });
+        }
+      },
+      deleteAllHandle() {
+        if (this.hasChecked()) {
+          this.deleteConfirm(checked => {
+            this.loadFlag = true;
+            this.$http.post('api/deleteAllTask?delFile=' + checked, this.checkTasks)
+            .then(() => {
+              this.checkTasks.forEach(taskId => this.$store.commit("tasks/delTask", taskId));
+              this.loadFlag = false;
+            }).catch(() => {
+            });
+          });
         }
       },
       ...mapMutations('tasks', [
@@ -333,38 +470,49 @@
         this.buildTaskHandle(result);
       }).catch(() => {
       });
+      this.$notify.info({
+        title: 'Tips',
+        position: 'bottom-right',
+        duration: 0,
+        message: '点击进度条可以查看任务下载详情'
+      });
     }
   }
 </script>
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped>
+  .tool-button {
+    font-size: 14px;
+    padding-right: 20px;
+  }
+
   .task-list-container {
     padding-bottom: 30px;
     text-align: center;
   }
 
-  .task-list {
+  .task-detail-list {
     margin: 0px;
     padding: 0px;
   }
 
-  .task-list-scroll {
+  .task-detail-list-scroll {
     overflow-y: auto;
     height: 448px;
   }
 
-  .task-list li {
+  .task-detail-list li {
     list-style: none;
     padding-bottom: 8px;
   }
 
-  .task-list li > div {
+  .task-detail-list li > div {
     display: inline-block;
     width: 70%;
   }
 
-  .task-list li > span {
+  .task-detail-list li > span {
     padding-left: 20px;
     padding-right: 5px;
     float: right;
@@ -375,13 +523,54 @@
   }
 
   @import "../assets/icon/iconfont.css";
-  .task-progress-icon {
-    height: 40px;
+
+  .task-list-row {
+    text-align: center;
   }
 
-  .task-progress-icon i {
-    padding: 10px 30px;
+  .task-list-row-title {
+    padding-top: 30px;
+    padding-bottom: 30px;
+  }
+
+  .task-list-row p {
+    position: relative;
+    top: -16px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
+
+  .task-list-icon {
+    height: 40px;
+    top: 0px;
+    left: 0px;
+  }
+
+  .task-list-icon i {
     font-size: 30px;
     cursor: pointer;
+    padding-left: 15px;
+  }
+</style>
+
+<style>
+  .el-checkbox__inner {
+    width: 18px;
+    height: 18px;
+  }
+
+  .el-checkbox__inner::after {
+    left: 6px;
+    height: 10px;
+  }
+
+  .file-detail-popper {
+    padding: 10px;
+    width: 60%;
+    word-break: break-all;
+    color: #ffffff;
+    font-size: 12px;
+    background: #303133;
   }
 </style>

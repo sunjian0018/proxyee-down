@@ -77,8 +77,6 @@ public class HttpDownController {
       List<HttpDownInfo> sameTasks = ContentManager.DOWN.getDownInfos().stream()
           .filter(downInfo -> HttpDownStatus.WAIT != downInfo.getTaskInfo().getStatus()
               && HttpDownStatus.DONE != downInfo.getTaskInfo().getStatus()
-              && HttpDownStatus.MERGE != downInfo.getTaskInfo().getStatus()
-              && HttpDownStatus.MERGE_CANCEL != downInfo.getTaskInfo().getStatus()
               && downInfo.getTaskInfo().getTotalSize() == taskInfo.getTotalSize()
           ).collect(Collectors.toList());
       data.put("sameTasks", NewTaskForm.parse(sameTasks));
@@ -159,6 +157,20 @@ public class HttpDownController {
     return resultInfo;
   }
 
+  @RequestMapping("/pauseAllTask")
+  public ResultInfo pauseAllTask(@RequestBody List<String> taskIds) throws Exception {
+    ResultInfo resultInfo = new ResultInfo();
+    if (taskIds != null && taskIds.size() > 0) {
+      for (String taskId : taskIds) {
+        AbstractHttpDownBootstrap bootstrap = ContentManager.DOWN.getBoot(taskId);
+        if (bootstrap != null) {
+          bootstrap.pauseDown();
+        }
+      }
+    }
+    return resultInfo;
+  }
+
   @RequestMapping("/continueTask")
   public ResultInfo continueTask(@RequestParam String id) throws Exception {
     ResultInfo resultInfo = new ResultInfo();
@@ -167,6 +179,20 @@ public class HttpDownController {
       resultInfo.setStatus(ResultStatus.BAD.getCode()).setMsg("任务不存在");
     } else {
       bootstrap.continueDown();
+    }
+    return resultInfo;
+  }
+
+  @RequestMapping("/continueAllTask")
+  public ResultInfo continueAllTask(@RequestBody List<String> taskIds) throws Exception {
+    ResultInfo resultInfo = new ResultInfo();
+    if (taskIds != null && taskIds.size() > 0) {
+      for (String taskId : taskIds) {
+        AbstractHttpDownBootstrap bootstrap = ContentManager.DOWN.getBoot(taskId);
+        if (bootstrap != null) {
+          bootstrap.continueDown();
+        }
+      }
     }
     return resultInfo;
   }
@@ -180,6 +206,21 @@ public class HttpDownController {
       resultInfo.setStatus(ResultStatus.BAD.getCode()).setMsg("任务不存在");
     } else {
       bootstrap.delete(delFile);
+    }
+    return resultInfo;
+  }
+
+  @RequestMapping("/deleteAllTask")
+  public ResultInfo deleteAllTask(@RequestBody List<String> taskIds, @RequestParam boolean delFile)
+      throws Exception {
+    ResultInfo resultInfo = new ResultInfo();
+    if (taskIds != null && taskIds.size() > 0) {
+      for (String taskId : taskIds) {
+        AbstractHttpDownBootstrap bootstrap = ContentManager.DOWN.getBoot(taskId);
+        if (bootstrap != null) {
+          bootstrap.delete(delFile);
+        }
+      }
     }
     return resultInfo;
   }
@@ -203,61 +244,62 @@ public class HttpDownController {
           }
           new Thread(() -> {
             try {
-              BdyZip.unzip(unzipForm.getFilePath(), unzipForm.getToPath(), new BdyUnzipCallback() {
+              BdyZip
+                  .unzip(unzipForm.getFilePath(), unzipForm.getToPath(), new BdyUnzipCallback() {
 
-                @Override
-                public void onStart() {
-                  unzipInfo.setType(BdyZip.ON_START)
-                      .setStartTime(System.currentTimeMillis());
-                  ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
-                }
+                    @Override
+                    public void onStart() {
+                      unzipInfo.setType(BdyZip.ON_START)
+                          .setStartTime(System.currentTimeMillis());
+                      ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
+                    }
 
-                @Override
-                public void onFix(long totalSize, long fixSize) {
-                  unzipInfo.setType(BdyZip.ON_FIX)
-                      .setTotalFixSize(totalSize)
-                      .setFixSize(fixSize);
-                  ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
-                }
+                    @Override
+                    public void onFix(long totalSize, long fixSize) {
+                      unzipInfo.setType(BdyZip.ON_FIX)
+                          .setTotalFixSize(totalSize)
+                          .setFixSize(fixSize);
+                      ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
+                    }
 
-                @Override
-                public void onFixDone(List<BdyZipEntry> list) {
-                  unzipInfo.setType(BdyZip.ON_FIX_DONE)
-                      .setTotalFileSize(list.stream().map(entry -> entry.getCompressedSize())
-                          .reduce((s1, s2) -> s1 + s2).get());
-                }
+                    @Override
+                    public void onFixDone(List<BdyZipEntry> list) {
+                      unzipInfo.setType(BdyZip.ON_FIX_DONE)
+                          .setTotalFileSize(list.stream().map(entry -> entry.getCompressedSize())
+                              .reduce((s1, s2) -> s1 + s2).get());
+                    }
 
-                @Override
-                public void onEntryStart(BdyZipEntry entry) {
-                  unzipInfo.setType(BdyZip.ON_ENTRY_START)
-                      .setEntry(entry)
-                      .setCurrFileSize(entry.getCompressedSize())
-                      .setCurrWriteSize(0);
-                  ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
-                }
+                    @Override
+                    public void onEntryStart(BdyZipEntry entry) {
+                      unzipInfo.setType(BdyZip.ON_ENTRY_START)
+                          .setEntry(entry)
+                          .setCurrFileSize(entry.getCompressedSize())
+                          .setCurrWriteSize(0);
+                      ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
+                    }
 
-                @Override
-                public void onEntryWrite(long totalSize, long writeSize) {
-                  unzipInfo.setType(BdyZip.ON_ENTRY_WRITE)
-                      .setCurrWriteSize(unzipInfo.getCurrWriteSize() + writeSize)
-                      .setTotalWriteSize(unzipInfo.getTotalWriteSize() + writeSize);
-                  ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
-                }
+                    @Override
+                    public void onEntryWrite(long totalSize, long writeSize) {
+                      unzipInfo.setType(BdyZip.ON_ENTRY_WRITE)
+                          .setCurrWriteSize(unzipInfo.getCurrWriteSize() + writeSize)
+                          .setTotalWriteSize(unzipInfo.getTotalWriteSize() + writeSize);
+                      ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
+                    }
 
-                @Override
-                public void onDone() {
-                  unzipInfo.setType(BdyZip.ON_DONE)
-                      .setEndTime(System.currentTimeMillis());
-                  ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
-                }
+                    @Override
+                    public void onDone() {
+                      unzipInfo.setType(BdyZip.ON_DONE)
+                          .setEndTime(System.currentTimeMillis());
+                      ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
+                    }
 
-                @Override
-                public void onError(Exception e) {
-                  unzipInfo.setType(BdyZip.ON_ERROR)
-                      .setErrorMsg(e.toString());
-                  ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
-                }
-              });
+                    @Override
+                    public void onError(Exception e) {
+                      unzipInfo.setType(BdyZip.ON_ERROR)
+                          .setErrorMsg(e.toString());
+                      ContentManager.WS.sendMsg(new WsForm(WsDataType.UNZIP_ING, unzipInfo));
+                    }
+                  });
             } catch (Exception e) {
               LOGGER.error("unzip error:", e);
             }
@@ -276,7 +318,6 @@ public class HttpDownController {
     }
     return resultInfo;
   }
-
 
   @RequestMapping("/getConfigInfo")
   public ResultInfo getConfigInfo() {
@@ -364,7 +405,8 @@ public class HttpDownController {
           FileUtil
               .deleteIfExists(zipPath);
           FileUtil
-              .deleteIfExists(httpDownInfo.getTaskInfo().getFilePath() + File.separator + unzipDir);
+              .deleteIfExists(
+                  httpDownInfo.getTaskInfo().getFilePath() + File.separator + unzipDir);
           //通知客户端
           ContentManager.WS
               .sendMsg(new WsForm(WsDataType.UPDATE_PROGRESS, httpDownInfo.getTaskInfo()));
@@ -462,6 +504,8 @@ public class HttpDownController {
       resultInfo.setData(taskInfo.getId());
     } catch (MalformedURLException e) {
       resultInfo.setStatus(ResultStatus.BAD.getCode()).setMsg("链接格式不正确");
+    } catch (TimeoutException e) {
+      resultInfo.setStatus(ResultStatus.BAD.getCode()).setMsg("连接超时，请重试");
     } catch (Exception e) {
       throw new RuntimeException("buildTask error:" + form.toString(), e);
     }

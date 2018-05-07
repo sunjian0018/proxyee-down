@@ -27,14 +27,16 @@ public class PluginUpdateCheckTask extends Thread {
           .eachText()) {
         URL url = new URL(HOST + name);
         URLConnection connection = url.openConnection();
+        connection.setUseCaches(false);
         PluginBean pluginBean = PluginUtil
-            .getPluginBean(connection.getInputStream(), PluginContent.get(name).getVersion());
-        if (pluginBean != null) {
-          PluginContent.update(name, pluginBean);
+            .checkAndUpdateLocalPlugin(name, connection.getInputStream());
+        PluginBean current = PluginContent.get(name);
+        if (current != null && pluginBean.getVersion() > current.getVersion()) {
+          PluginContent.set(name, pluginBean);
         }
       }
     } catch (IOException e) {
-      LOGGER.error("plugin update error", e);
+      LOGGER.error("plugin set error", e);
     }
   }
 }
