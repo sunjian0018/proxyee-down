@@ -22,10 +22,17 @@ import java.util.concurrent.TimeUnit;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.HPos;
+import javafx.geometry.Insets;
 import javafx.geometry.Rectangle2D;
 import javafx.geometry.VPos;
+import javafx.scene.Group;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Alert.AlertType;
+import javafx.scene.control.ButtonBase;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.DialogPane;
 import javafx.scene.image.Image;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -34,6 +41,7 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Region;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
+import javafx.stage.Modality;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javax.swing.JOptionPane;
@@ -131,6 +139,49 @@ public class HttpDownApplication extends Application {
   }
 
   private void afterTrayInit() {
+    //启动线程
+    new HttpDownProgressEventTask().start();
+    new PluginUpdateCheckTask().start();
+  }
+
+  private static boolean isSupportBrowser;
+
+  @Override
+  public void start(Stage stage) throws Exception {
+    initHandle();
+    this.stage = stage;
+    Platform.setImplicitExit(false);
+    isSupportBrowser = isSupportBrowser();
+    SwingUtilities.invokeLater(this::addTray);
+    //webview加载
+    if (ContentManager.CONFIG.get().getUiModel() == 1 && isSupportBrowser) {
+      initBrowser();
+    }
+    stage.setTitle("proxyee-down-" + version);
+    Rectangle2D bounds = Screen.getPrimary().getVisualBounds();
+    ConfigInfo cf = ContentManager.CONFIG.get();
+    stage.setX(cf.getGuiX() >= 0 ? cf.getGuiX() : bounds.getMinX());
+    stage.setY(cf.getGuiY() >= 0 ? cf.getGuiY() : bounds.getMinY());
+    stage.setWidth(cf.getGuiWidth() >= 0 ? cf.getGuiWidth() : bounds.getWidth());
+    stage.setHeight(cf.getGuiHeight() >= 0 ? cf.getGuiHeight() : bounds.getHeight());
+    stage.getIcons().add(new Image(
+        Thread.currentThread().getContextClassLoader().getResourceAsStream("favicon.png")));
+    //关闭窗口监听
+    stage.setOnCloseRequest(event -> {
+      event.consume();
+      close();
+    });
+    //检查证书安装情况
+    checkCa();
+    //开启代理服务器
+    startSniffProxy();
+    //启动时是否打开窗口
+    if (ContentManager.CONFIG.get().isAutoOpen()) {
+      open(false);
+    }
+  }
+
+  private void checkCa() {
     try {
       //根证书生成
       if (!FileUtil.exists(HttpDownConstant.CA_PRI_PATH)
@@ -149,9 +200,9 @@ public class HttpDownApplication extends Application {
                 .getEncoded());
       }
       //启动检查证书安装
-      if (ContentManager.CONFIG.get().isCheckCa() &&
-          !OsUtil.existsCert(HttpDownConstant.CA_SUBJECT,
-              ByteUtil.getCertHash(CertUtil.loadCert(HttpDownConstant.CA_CERT_PATH)))) {
+      if (ContentManager.CONFIG.get().isCheckCa()
+          && !OsUtil.existsCert(HttpDownConstant.CA_SUBJECT,
+          ByteUtil.getCertHash(CertUtil.loadCert(HttpDownConstant.CA_CERT_PATH)))) {
         if (OsUtil.existsCert(HttpDownConstant.CA_SUBJECT)) {
           //重新生成卸载之前的证书
           if (OsUtil.isWindows() && OsUtil
@@ -171,7 +222,9 @@ public class HttpDownApplication extends Application {
       showMsg("证书安装失败，请手动安装");
       LOGGER.error("cert handle error", e);
     }
+  }
 
+  private void startSniffProxy() {
     //嗅探代理服务器启动
     proxyServer = new HttpDownProxyServer(
         new HttpDownProxyCACertFactory(HttpDownConstant.CA_CERT_PATH, HttpDownConstant.CA_PRI_PATH),
@@ -212,43 +265,6 @@ public class HttpDownApplication extends Application {
       showMsg("端口(" + sniffProxyPort + ")被占用，请勿重复启动本软件！若无重复启动，请关闭占用端口的软件或设置新的端口号");
     } else {
       new Thread(() -> proxyServer.start(ContentManager.CONFIG.get().getProxyPort())).start();
-    }
-
-    //启动线程
-    new HttpDownProgressEventTask().start();
-    new PluginUpdateCheckTask().start();
-  }
-
-  private static boolean isSupportBrowser;
-
-  @Override
-  public void start(Stage stage) throws Exception {
-    initHandle();
-    this.stage = stage;
-    Platform.setImplicitExit(false);
-    isSupportBrowser = isSupportBrowser();
-    SwingUtilities.invokeLater(this::addTray);
-    //webview加载
-    if (ContentManager.CONFIG.get().getUiModel() == 1 && isSupportBrowser) {
-      initBrowser();
-    }
-    stage.setTitle("proxyee-down-" + version);
-    Rectangle2D bounds = Screen.getPrimary().getVisualBounds();
-    ConfigInfo cf = ContentManager.CONFIG.get();
-    stage.setX(cf.getGuiX() >= 0 ? cf.getGuiX() : bounds.getMinX());
-    stage.setY(cf.getGuiY() >= 0 ? cf.getGuiY() : bounds.getMinY());
-    stage.setWidth(cf.getGuiWidth() >= 0 ? cf.getGuiWidth() : bounds.getWidth());
-    stage.setHeight(cf.getGuiHeight() >= 0 ? cf.getGuiHeight() : bounds.getHeight());
-    stage.getIcons().add(new Image(
-        Thread.currentThread().getContextClassLoader().getResourceAsStream("favicon.png")));
-    //关闭窗口监听
-    stage.setOnCloseRequest(event -> {
-      event.consume();
-      close();
-    });
-    //启动时是否打开窗口
-    if (ContentManager.CONFIG.get().isAutoOpen()) {
-      open(false);
     }
   }
 
@@ -291,7 +307,28 @@ public class HttpDownApplication extends Application {
   }
 
   private void showMsg(String msg) {
-    JOptionPane.showMessageDialog(null, msg, "提示", JOptionPane.WARNING_MESSAGE);
+    Alert alert = new Alert(AlertType.INFORMATION);
+    alert.setTitle("提示");
+    alert.setHeaderText(null);
+    alert.setContentText(msg);
+
+    DialogPane root = alert.getDialogPane();
+    Stage dialogStage = new Stage();
+
+    for (ButtonType buttonType : root.getButtonTypes()) {
+      ButtonBase button = (ButtonBase) root.lookupButton(buttonType);
+      button.setOnAction(evt -> dialogStage.close());
+    }
+
+    root.getScene().setRoot(new Group());
+    root.setPadding(new Insets(10, 0, 10, 0));
+
+    Scene scene = new Scene(root);
+    dialogStage.setScene(scene);
+    dialogStage.initModality(Modality.APPLICATION_MODAL);
+    dialogStage.setAlwaysOnTop(true);
+    dialogStage.setResizable(false);
+    dialogStage.showAndWait();
   }
 
   private void addTray() {
