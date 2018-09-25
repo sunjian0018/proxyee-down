@@ -1,65 +1,119 @@
-# HTTP下载器
-使用本地http代理服务器方式嗅探下载请求，支持所有操作系统和大部分主流浏览器,支持分段下载和断点下载。
-## 使用教程
-### 下载
-- [OneDrive](https://imhx-my.sharepoint.com/:f:/g/personal/pd_imhx_onmicrosoft_com/EnPrybHS3rVFuy_HdcP7RLoBwhb0k5ayJdIzwjU0hCM9-A?e=he0oIz)(推荐)
-- [百度云](https://pan.baidu.com/s/1fgBnWJ0gl6ZkneGkVDIEfQ) 提取码:d92x
-### 安装
-1. [Windows安装教程](https://github.com/monkeyWie/proxyee-down/blob/master/.guide/windows/read.md)
-2. [MAC安装教程](https://github.com/monkeyWie/proxyee-down/blob/master/.guide/mac/read.md)
-3. [Linux安装教程](https://github.com/monkeyWie/proxyee-down/blob/master/.guide/linux/read.md)
-### 安装成功
-在安装成功之后，**进入浏览器**下载资源时会跳转到创建任务页面，然后选择保存的路径和分段数进行创建下载任务。    
-![新建任务](https://github.com/monkeyWie/proxyee-down/raw/master/.guide/common/new-task.png)
-## 常见问题(**必看**)
-在开始使用前务必看一遍[常见问题列表](https://github.com/monkeyWie/proxyee-down/blob/master/.guide/FAQ.md)，可以解决你使用proxyee-down下载遇到的绝大多数问题。
-## 常用功能
-### 手动创建任务
-可以根据链接来创建一个任务，支持自定义请求头和请求体，具体请[查看](https://github.com/monkeyWie/proxyee-down/blob/master/.guide/common/create/read.md)。
-### 刷新任务下载链接
-当任务下载链接失效了，下载没速度或失败则可以使用刷新下载链接的功能，使用新的链接继续下载，具体请[查看](https://github.com/monkeyWie/proxyee-down/blob/master/.guide/common/refresh/read.md)。
-### 百度云破解
-#### 2018-03-29更新  
-百度云近期对**批量下载**的并发连接数做了限制，如果选择的文件里包含文件夹，分段数需要建议不要超过64，否则可能会导致任务下载失败或下载速度慢。
-#### 功能介绍
-百度云大文件、合并下载限制突破,成功安装下载器后，打开百度云页面会有如下提示，然后在选择文件后点击下载按钮即可调用proxyee-down下载    
-![百度云破解](https://github.com/monkeyWie/proxyee-down/raw/master/.guide/common/bdy-hook.png)
-### 百度云解压工具
-由于百度批量下载的zip压缩包不是zip64格式，在压缩包里有超过4G文件的时候普通的解压工具并不能正确的识别文件大小从而导致压缩失败，遇到这种情况时可以在下载器左侧**工具**栏目里找到百度云解压工具进行解压 
-![百度云解压](https://github.com/monkeyWie/proxyee-down/raw/master/.guide/common/bdy-unzip.png)
-## 其他
-### SwitchyOmega插件安装与设置
-[查看](https://github.com/monkeyWie/proxyee-down/blob/master/.guide/common/switchy/read.md)
-### 手动安装证书
-[查看](https://github.com/monkeyWie/proxyee-down/blob/master/.guide/common/ca/read.md)
-### 开放接口
-[查看](https://github.com/monkeyWie/proxyee-down/blob/master/.guide/common/api/read.md)
-### QQ群
-1群**11352304**、2群**20236964**、3群**20233754**、4群**737991056**
-### 支持
-感谢 [惶心|技术博客](https://tech.hxco.de) 提供下载服务
-# 开发
-本项目依赖[proxyee](https://github.com/monkeyWie/proxyee)，因为还没上传maven中央仓库，需自行编译打包至本地仓库。  
-导入IDE里时需要安装lombok插件。
-## 环境
-  ![](https://img.shields.io/badge/JAVA-1.8%2B-brightgreen.svg) ![](https://img.shields.io/badge/maven-3.0%2B-brightgreen.svg) ![](https://img.shields.io/badge/node.js-8.0%2B-brightgreen.svg)
-## 编译
-```
-#proxyee依赖编译
-git clone https://github.com/monkeyWie/proxyee.git
-cd proxyee
-mvn clean install
+![](https://i.imgur.com/dUvNgmd.jpg)  
 
-#proxyee-down编译
+# [Proxyee Down](https://pdown.org)
+[![Author](https://img.shields.io/badge/author-monkeyWie-red.svg?style=flat-square)](https://github.com/monkeyWie)
+[![Contributors](https://img.shields.io/github/contributors/proxyee-down-org/proxyee-down.svg?style=flat-square)](https://github.com/proxyee-down-org/proxyee-down/graphs/contributors)
+[![Stargazers](https://img.shields.io/github/stars/proxyee-down-org/proxyee-down.svg?style=flat-square)](https://github.com/proxyee-down-org/proxyee-down/stargazers)
+[![Fork](https://img.shields.io/github/forks/proxyee-down-org/proxyee-down.svg?style=flat-square)](https://github.com/proxyee-down-org/proxyee-down/fork)
+[![License](https://img.shields.io/github/license/proxyee-down-org/proxyee-down.svg?style=flat-square)](https://github.com/proxyee-down-org/proxyee-down/blob/master/LICENSE)
+
+> Proxyee Down 是一款开源的免费 HTTP 高速下载器，底层使用`netty`开发，支持自定义 HTTP 请求下载且支持扩展功能，可以通过安装扩展实现特殊的下载需求。
+
+
+## 下载程序
+  
+  1. [OneDrive 下载](https://imhx-my.sharepoint.com/:f:/g/personal/pd_imhx_onmicrosoft_com/EnPrybHS3rVFuy_HdcP7RLoBwhb0k5ayJdIzwjU0hCM9-A?e=he0oIz)  
+    感谢 [惶心 技术博客](https://tech.hxco.de) 提供账号。
+  2. [官网下载](http://pdown.org/releases.html)  
+    目前官网带宽非常低所以下载很慢，所以推荐用**OneDriver**下载。(如果有服务器或者CDN赞助的话可以联系我~)
+
+## 使用说明
+
+- **Windows**:   
+  下载 Windows 版本的压缩包以后，将压缩包解压至任意目录，执行文件夹里的`Proxyee Down.exe`文件即可。  
+  > 注意：360 可能会报毒，请将报毒文件加入白名单，或者直接卸载 360
+
+  ![](https://upload.cc/i1/2018/09/14/ZcgU9L.png)
+- **macOS**:  
+  下载 `macOS` 版本的压缩包之后，解压至任意目录，将目录内的 `Proxyee Down` 应用复制到 `Application`（或者 `应用程序`，取决于系统版本以及语言设定）文件夹，双击运行即可。  
+  > 注意：如果启动闪退，把 APP 复制到其他目录即可正常运行；且 `macOS` 切换代理以及安装证书需要管理员权限，在应用启动时会提示输入密码
+
+  ![](https://upload.cc/i1/2018/09/14/2ftXlP.png)
+- **Linux**:  
+  Linux 系统目前没有打原生包，要自行下载 jar 包运行，需安装 `JRE` 或 `JDK`(要求版本不低于 `1.8`)，下载完成后在命令行中运行：
+  ```
+  java -jar proxyee-down-main.jar
+  ```
+  > 注意：如果使用 `openjdk` 的话需要安装 `openjfx`
+
+
+## 任务模块
+
+用于管理下载任务，可以在此页面创建、查看、删除、暂停、恢复下载任务。
+
+- **进阶**
+  - [自定义下载请求](https://github.com/proxyee-down-org/proxyee-down/blob/v2.5/.guide/common/create/read.md)
+  - [刷新任务下载链接](https://github.com/proxyee-down-org/proxyee-down/blob/v2.5/.guide/common/refresh/read.md)
+
+## 扩展模块
+
+在开启扩展模块时一定要手动安装一个由 `Proxyee Down` 随机生成的一个 CA 证书用于`HTTPS MITM`的支持。
+
+- **安装证书**
+
+  进入扩展页面，如果软件检测到没有安装 Proxyee Down CA 证书时，会有对应的安装提示，接受的话点击安装按照系统指引即可安装完毕。
+  ![安装证书](https://upload.cc/i1/2018/09/14/hzCZbJ.png)
+
+- **扩展商店**
+
+  安装完证书后会进入扩展商店页面，目前扩展商店只有一款百度云下载扩展，以后会陆续开发更多的扩展(_例如：各大网站的视频下载扩展、其他网盘的下载扩展等等_)。
+  ![扩展商城](https://upload.cc/i1/2018/09/14/jZ5lUI.png)
+
+- **扩展安装**
+
+  在操作栏找到安装按钮，点击安装即可安装扩展。
+  ![](https://upload.cc/i1/2018/09/14/JgZXj4.png)
+
+- **全局代理**
+
+  全局代理默认是不开启的，开启 `Proxyee Down` 会根据启用的扩展进行对应的系统代理设置，可能会与相同机制的软件发生冲突(例如：Shadowsocks, ShadowsocksR)。
+  如果不使用全局代理，可以点击 `复制PAC链接` ，配合 [SwitchyOmega 插件](https://www.switchyomega.com/) 来使用。
+
+- **其他相关**
+
+  - **SwitchyOmega 设置教程**  
+    1. 新建情景模式，选择 `PAC` 情景模式类型。
+
+      ![](https://upload.cc/i1/2018/09/14/1Uj25H.png)
+      
+    2. 把复制的 `PAC` 链接粘贴进来并点击立即更新情景模式然后保存
+
+      ![](https://upload.cc/i1/2018/09/14/ZKdqrU.png)
+
+    3. 切换情景模式进行下载  
+
+      ![](https://upload.cc/i1/2018/09/14/h4qP9F.png)
+
+  - **参与扩展开发**  
+    详见 [proxyee-down-extension](https://github.com/proxyee-down-org/proxyee-down-extension)
+
+  - **扩展实现原理**  
+    扩展功能是由 `MITM` (中间人攻击)技术实现的，使用 [proxyee](https://github.com/monkeyWie/proxyee) 框架拦截和修改 `HTTP` 或 `HTTPS` 的请求和响应报文，从而实现对应的扩展脚本注入。
+
+## 交流群组
+
+1 群**11352304**、2 群**20236964**、3 群**20233754**、4 群**737991056**
+
+## 开发参数
+
+本项目后端主要使用 `java` + `spring` + `boot` + `netty`，前端使用 `vue.js` + `iview`
+
+### 环境
+![](https://img.shields.io/badge/JAVA-1.8%2B-brightgreen.svg) ![](https://img.shields.io/badge/maven-3.0%2B-brightgreen.svg) ![](https://img.shields.io/badge/node.js-8.0%2B-brightgreen.svg)
+
+### 编译
+
+```
 git clone https://github.com/monkeyWie/proxyee-down.git
-cd proxyee-down/ui/view
+cd proxyee-down/front
+#build html
 npm install
 npm run build
-cd ../..
-mvn clean package
+cd ../main
+mvn clean package -Pprd
 ```
-## 运行
+
+### 运行
 ```
-cd target
-java -jar proxyee-down.jar
+java -jar proxyee-down-main.jar
 ```
